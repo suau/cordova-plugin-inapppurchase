@@ -250,61 +250,63 @@ public class InAppBillingV3 extends CordovaPlugin {
     };
     if(subscribe){
         final Bundle extraParams = new Bundle();
-        try {
+        if (args.length() > 1) {
+          try {
             final JSONObject extraParamsJSON = args.getJSONObject(1);
             if (extraParamsJSON != null) {
-                Iterator<String> iter = extraParamsJSON.keys();
-                while (iter.hasNext()) {
-                    String key = iter.next();
-                    Object value = extraParamsJSON.get(key);
-                    if (value instanceof Boolean) {
-                        extraParams.putBoolean(key, (Boolean) value);
-                    } else if (value instanceof Integer) {
-                        extraParams.putInt(key, (Integer) value);
-                    } else if (value instanceof String) {
-                        extraParams.putString(key, (String) value);
-                    } else if (value instanceof Long) {
-                        extraParams.putLong(key, (Long) value);
-                    } else if (value instanceof Double) {
-                        extraParams.putDouble(key, (Double) value);
-                    } else if (value instanceof JSONArray) {
-                        JSONArray arr = (JSONArray) value;
-                        if (arr.length() > 0) {
-                            if (arr.get(0) instanceof String) {
-                                ArrayList<String> stringList = new ArrayList<String>();
-                                for (int i = 0; i < arr.length(); i++) {
-                                    Object ival = arr.get(i);
-                                    if (ival instanceof String) {
-                                        stringList.add((String) ival);
-                                    } else {
-                                        throw new IllegalArgumentException("Mixed element type. Only pure String or Integer Arrays allowed in extraParams");
-                                    }
-                                }
-                                extraParams.putStringArrayList(key, stringList);
-                            } else if (arr.get(0) instanceof Integer) {
-                                ArrayList<Integer> integerList = new ArrayList<Integer>();
-                                for (int i = 0; i < arr.length(); i++) {
-                                    Object ival = arr.get(i);
-                                    if (ival instanceof Integer) {
-                                        integerList.add((Integer) ival);
-                                    } else {
-                                        throw new IllegalArgumentException("Mixed element type. Only pure String or Integer Arrays allowed in extraParams");
-                                    }
-                                }
-                                extraParams.putIntegerArrayList(key, integerList);
-                            } else {
-                                throw new IllegalArgumentException("only pure String or Integer Arrays allowed in extraParams");
-                            }
+              Iterator<String> iter = extraParamsJSON.keys();
+              while (iter.hasNext()) {
+                String key = iter.next();
+                Object value = extraParamsJSON.get(key);
+                if (value instanceof Boolean) {
+                  extraParams.putBoolean(key, (Boolean) value);
+                } else if (value instanceof Integer) {
+                  extraParams.putInt(key, (Integer) value);
+                } else if (value instanceof String) {
+                  extraParams.putString(key, (String) value);
+                } else if (value instanceof Long) {
+                  extraParams.putLong(key, (Long) value);
+                } else if (value instanceof Double) {
+                  extraParams.putDouble(key, (Double) value);
+                } else if (value instanceof JSONArray) {
+                  JSONArray arr = (JSONArray) value;
+                  if (arr.length() > 0) {
+                    if (arr.get(0) instanceof String) {
+                      ArrayList<String> stringList = new ArrayList<String>();
+                      for (int i = 0; i < arr.length(); i++) {
+                        Object ival = arr.get(i);
+                        if (ival instanceof String) {
+                          stringList.add((String) ival);
+                        } else {
+                          throw new IllegalArgumentException("Mixed element type. Only pure String or Integer Arrays allowed in extraParams");
                         }
+                      }
+                      extraParams.putStringArrayList(key, stringList);
+                    } else if (arr.get(0) instanceof Integer) {
+                      ArrayList<Integer> integerList = new ArrayList<Integer>();
+                      for (int i = 0; i < arr.length(); i++) {
+                        Object ival = arr.get(i);
+                        if (ival instanceof Integer) {
+                          integerList.add((Integer) ival);
+                        } else {
+                          throw new IllegalArgumentException("Mixed element type. Only pure String or Integer Arrays allowed in extraParams");
+                        }
+                      }
+                      extraParams.putIntegerArrayList(key, integerList);
+                    } else {
+                      throw new IllegalArgumentException("only pure String or Integer Arrays allowed in extraParams");
                     }
+                  }
                 }
+              }
             }
-        } catch (JSONException e) {
+          } catch (JSONException e) {
             callbackContext.error(makeError("Invalid extraParams", INVALID_ARGUMENTS));
             return false;
-        } catch (IllegalArgumentException e) {
+          } catch (IllegalArgumentException e) {
             callbackContext.error(makeError("Invalid extraParams", INVALID_ARGUMENTS));
             return false;
+          }
         }
       iabHelper.launchSubscriptionPurchaseFlow(cordovaActivity, sku, newOrder, oipfl, "", extraParams);
     } else {
