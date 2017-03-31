@@ -14,6 +14,7 @@ package com.alexdisler.inapppurchases;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Scanner;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -31,6 +32,7 @@ import com.alexdisler.inapppurchases.IabHelper.OnConsumeFinishedListener;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.os.Bundle;
 import android.util.Log;
 
 public class InAppBillingV3 extends CordovaPlugin {
@@ -247,7 +249,64 @@ public class InAppBillingV3 extends CordovaPlugin {
       }
     };
     if(subscribe){
-      iabHelper.launchSubscriptionPurchaseFlow(cordovaActivity, sku, newOrder, oipfl, "");
+        final Bundle extraParams = new Bundle();
+        try {
+            final JSONObject extraParamsJSON = args.getJSONObject(1);
+            if (extraParamsJSON != null) {
+                Iterator<String> iter = extraParamsJSON.keys();
+                while (iter.hasNext()) {
+                    String key = iter.next();
+                    Object value = extraParamsJSON.get(key);
+                    if (value instanceof Boolean) {
+                        extraParams.putBoolean(key, (Boolean) value);
+                    } else if (value instanceof Integer) {
+                        extraParams.putInt(key, (Integer) value);
+                    } else if (value instanceof String) {
+                        extraParams.putString(key, (String) value);
+                    } else if (value instanceof Long) {
+                        extraParams.putLong(key, (Long) value);
+                    } else if (value instanceof Double) {
+                        extraParams.putDouble(key, (Double) value);
+                    } else if (value instanceof JSONArray) {
+                        JSONArray arr = (JSONArray) value;
+                        if (arr.length() > 0) {
+                            if (arr.get(0) instanceof String) {
+                                ArrayList<String> stringList = new ArrayList<>();
+                                for (int i = 0; i < arr.length(); i++) {
+                                    Object ival = arr.get(i);
+                                    if (ival instanceof String) {
+                                        stringList.add((String) ival);
+                                    } else {
+                                        throw new IllegalArgumentException("Mixed element type. Only pure String or Integer Arrays allowed in extraParams");
+                                    }
+                                }
+                                extraParams.putStringArrayList(key, stringList);
+                            } else if (arr.get(0) instanceof Integer) {
+                                ArrayList<Integer> integerList = new ArrayList<>();
+                                for (int i = 0; i < arr.length(); i++) {
+                                    Object ival = arr.get(i);
+                                    if (ival instanceof Integer) {
+                                        integerList.add((Integer) ival);
+                                    } else {
+                                        throw new IllegalArgumentException("Mixed element type. Only pure String or Integer Arrays allowed in extraParams");
+                                    }
+                                }
+                                extraParams.putIntegerArrayList(key, integerList);
+                            } else {
+                                throw new IllegalArgumentException("only pure String or Integer Arrays allowed in extraParams");
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (JSONException e) {
+            callbackContext.error(makeError("Invalid extraParams", INVALID_ARGUMENTS));
+            return false;
+        } catch (IllegalArgumentException e) {
+            callbackContext.error(makeError("Invalid extraParams", INVALID_ARGUMENTS));
+            return false;
+        }
+      iabHelper.launchSubscriptionPurchaseFlow(cordovaActivity, sku, newOrder, oipfl, "", extraParams);
     } else {
       iabHelper.launchPurchaseFlow(cordovaActivity, sku, newOrder, oipfl, "");
     }
