@@ -271,7 +271,7 @@ public class InAppBillingV3 extends CordovaPlugin {
                         JSONArray arr = (JSONArray) value;
                         if (arr.length() > 0) {
                             if (arr.get(0) instanceof String) {
-                                ArrayList<String> stringList = new ArrayList<>();
+                                ArrayList<String> stringList = new ArrayList<String>();
                                 for (int i = 0; i < arr.length(); i++) {
                                     Object ival = arr.get(i);
                                     if (ival instanceof String) {
@@ -282,7 +282,7 @@ public class InAppBillingV3 extends CordovaPlugin {
                                 }
                                 extraParams.putStringArrayList(key, stringList);
                             } else if (arr.get(0) instanceof Integer) {
-                                ArrayList<Integer> integerList = new ArrayList<>();
+                                ArrayList<Integer> integerList = new ArrayList<Integer>();
                                 for (int i = 0; i < arr.length(); i++) {
                                     Object ival = arr.get(i);
                                     if (ival instanceof Integer) {
