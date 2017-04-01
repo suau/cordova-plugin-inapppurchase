@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-package com.example.android.trivialdrivesample.util;
+package com.alexdisler.inapppurchases;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;
