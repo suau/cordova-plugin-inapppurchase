@@ -32,10 +32,11 @@ import com.alexdisler.inapppurchases.IabHelper.OnConsumeFinishedListener;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.os.Bundle;
 import android.util.Log;
 
-public class InAppBillingV3 extends CordovaPlugin {
+public class InAppBillingV3 extends CordovaPlugin implements IabBroadcastReceiver.IabBroadcastListener {
 
   protected static final String TAG = "google.payments";
 
@@ -61,6 +62,9 @@ public class InAppBillingV3 extends CordovaPlugin {
   AtomicInteger orderSerial = new AtomicInteger(0);
 
   private JSONObject manifestObject = null;
+
+  // Provides purchase notification while this app is running
+  IabBroadcastReceiver mBroadcastReceiver;
 
   private JSONObject getManifestContents() {
     if (manifestObject != null) return manifestObject;
@@ -91,14 +95,6 @@ public class InAppBillingV3 extends CordovaPlugin {
     return null;
   }
 
-  protected boolean shouldSkipPurchaseVerification() {
-    JSONObject manifestObject = getManifestContents();
-    if (manifestObject != null) {
-      return manifestObject.optBoolean("skip_purchase_verification");
-    }
-    return false;
-  }
-
   protected boolean initializeBillingHelper() {
     if (iabHelper != null) {
       Log.d(TAG, "Billing already initialized");
@@ -106,10 +102,8 @@ public class InAppBillingV3 extends CordovaPlugin {
     }
     Context context = this.cordova.getActivity();
     String base64EncodedPublicKey = getBase64EncodedPublicKey();
-    boolean skipPurchaseVerification = shouldSkipPurchaseVerification();
     if (base64EncodedPublicKey != null) {
       iabHelper = new IabHelper(context, base64EncodedPublicKey);
-      iabHelper.setSkipPurchaseVerification(skipPurchaseVerification);
       billingInitialized = false;
       return true;
     }
@@ -121,10 +115,6 @@ public class InAppBillingV3 extends CordovaPlugin {
   public void initialize(CordovaInterface cordova, CordovaWebView webView) {
     super.initialize(cordova, webView);
     initializeBillingHelper();
-  }
-
-  protected JSONObject makeError(String message) {
-    return makeError(message, null, null, null);
   }
 
   protected JSONObject makeError(String message, Integer resultCode) {
@@ -161,22 +151,28 @@ public class InAppBillingV3 extends CordovaPlugin {
   public boolean execute(String action, final JSONArray args, final CallbackContext callbackContext) {
     Log.d(TAG, "executing on android");
     if ("init".equals(action)) {
-      return init(args, callbackContext);
+      init(args, callbackContext);
+      return true;
     } else if ("buy".equals(action)) {
-      return buy(args, callbackContext);
+      buy(args, callbackContext);
+      return true;
     } else if ("subscribe".equals(action)) {
-      return subscribe(args, callbackContext);
+      subscribe(args, callbackContext);
+      return true;
     } else if ("consumePurchase".equals(action)) {
-      return consumePurchase(args, callbackContext);
+      consumePurchase(args, callbackContext);
+      return true;
     } else if ("getSkuDetails".equals(action)) {
-      return getSkuDetails(args, callbackContext);
+      getSkuDetails(args, callbackContext);
+      return true;
     } else if ("restorePurchases".equals(action)) {
-      return restorePurchases(args, callbackContext);
+      restorePurchases(args, callbackContext);
+      return true;
     }
     return false;
   }
 
-  protected boolean init(final JSONArray args, final CallbackContext callbackContext) {
+  protected void init(final JSONArray args, final CallbackContext callbackContext) {
     if (billingInitialized == true) {
       Log.d(TAG, "Billing already initialized");
       callbackContext.success();
@@ -187,28 +183,30 @@ public class InAppBillingV3 extends CordovaPlugin {
         public void onIabSetupFinished(IabResult result) {
           if (!result.isSuccess()) {
             callbackContext.error(makeError("Unable to initialize billing: " + result.toString(), UNABLE_TO_INITIALIZE, result));
-          } else {
-            Log.d(TAG, "Billing initialized");
-            billingInitialized = true;
-            callbackContext.success();
+            return;
           }
+          // Have we been disposed of in the meantime? If so, quit.
+          if (iabHelper == null) return;
+
+          Log.d(TAG, "Billing initialized");
+          billingInitialized = true;
+          callbackContext.success();
         }
       });
     }
-    return true;
   }
 
-  protected boolean runPayment(final JSONArray args, final CallbackContext callbackContext, boolean subscribe) {
+  protected void runPayment(final JSONArray args, final CallbackContext callbackContext, boolean subscribe) {
     final String sku;
     try {
       sku = args.getString(0);
     } catch (JSONException e) {
       callbackContext.error(makeError("Invalid SKU", INVALID_ARGUMENTS));
-      return false;
+      return;
     }
     if (iabHelper == null || !billingInitialized) {
       callbackContext.error(makeError("Billing is not initialized", BILLING_NOT_INITIALIZED));
-      return false;
+      return;
     }
     final Activity cordovaActivity = this.cordova.getActivity();
     int newOrder = orderSerial.getAndIncrement();
@@ -302,28 +300,37 @@ public class InAppBillingV3 extends CordovaPlugin {
             }
           } catch (JSONException e) {
             callbackContext.error(makeError("Invalid extraParams", INVALID_ARGUMENTS));
-            return false;
+            return;
           } catch (IllegalArgumentException e) {
             callbackContext.error(makeError("Invalid extraParams", INVALID_ARGUMENTS));
-            return false;
+            return;
           }
         }
-      iabHelper.launchSubscriptionPurchaseFlow(cordovaActivity, sku, newOrder, oipfl, "", extraParams);
+      ArrayList<String> oldSkus = extraParams.getStringArrayList("skusToReplace");
+      boolean disableProration = !extraParams.getBoolean("replaceSkusProration", true);
+      try {
+        iabHelper.launchPurchaseFlow(cordovaActivity, sku, IabHelper.ITEM_TYPE_SUBS, oldSkus, disableProration, newOrder, oipfl, "");
+      } catch (IabHelper.IabAsyncInProgressException e) {
+        e.printStackTrace();
+      }
     } else {
-      iabHelper.launchPurchaseFlow(cordovaActivity, sku, newOrder, oipfl, "");
+      try {
+        iabHelper.launchPurchaseFlow(cordovaActivity, sku, newOrder, oipfl, "");
+      } catch (IabHelper.IabAsyncInProgressException e) {
+        e.printStackTrace();
+      }
     }
-    return true;
   }
 
-  protected boolean subscribe(final JSONArray args, final CallbackContext callbackContext) {
-    return runPayment(args, callbackContext, true);
+  protected void subscribe(final JSONArray args, final CallbackContext callbackContext) {
+    runPayment(args, callbackContext, true);
   }
 
-  protected boolean buy(final JSONArray args, final CallbackContext callbackContext) {
-    return runPayment(args, callbackContext, false);
+  protected void buy(final JSONArray args, final CallbackContext callbackContext) {
+    runPayment(args, callbackContext, false);
   }
 
-  protected boolean consumePurchase(final JSONArray args, final CallbackContext callbackContext) {
+  protected void consumePurchase(final JSONArray args, final CallbackContext callbackContext) {
     final Purchase purchase;
     try {
       String type = args.getString(0);
@@ -332,109 +339,77 @@ public class InAppBillingV3 extends CordovaPlugin {
       purchase = new Purchase(type, receipt, signature);
     } catch (JSONException e) {
       callbackContext.error(makeError("Unable to parse purchase token", INVALID_ARGUMENTS));
-      return false;
+      return;
     }
     if (purchase == null) {
       callbackContext.error(makeError("Unrecognized purchase token", INVALID_ARGUMENTS));
-      return false;
+      return;
     }
     if (iabHelper == null || !billingInitialized) {
       callbackContext.error(makeError("Billing is not initialized", BILLING_NOT_INITIALIZED));
-      return false;
+      return;
     }
-    iabHelper.consumeAsync(purchase, new OnConsumeFinishedListener() {
-      public void onConsumeFinished(Purchase purchase, IabResult result) {
-        if (result.isFailure()) {
-          int response = result.getResponse();
-          if (response == IabHelper.BILLING_RESPONSE_RESULT_ITEM_NOT_OWNED) {
-            callbackContext.error(makeError("Error consuming purchase", ITEM_NOT_OWNED, result));
+    try {
+      iabHelper.consumeAsync(purchase, new OnConsumeFinishedListener() {
+        public void onConsumeFinished(Purchase purchase, IabResult result) {
+          if (result.isFailure()) {
+            int response = result.getResponse();
+            if (response == IabHelper.BILLING_RESPONSE_RESULT_ITEM_NOT_OWNED) {
+              callbackContext.error(makeError("Error consuming purchase", ITEM_NOT_OWNED, result));
+            } else {
+              callbackContext.error(makeError("Error consuming purchase", CONSUME_FAILED, result));
+            }
           } else {
-            callbackContext.error(makeError("Error consuming purchase", CONSUME_FAILED, result));
-          }
-        } else {
-          try {
-            JSONObject pluginResponse = new JSONObject();
-            pluginResponse.put("transactionId", purchase.getOrderId());
-            pluginResponse.put("productId", purchase.getSku());
-            pluginResponse.put("token", purchase.getToken());
-            callbackContext.success(pluginResponse);
-          } catch (JSONException e) {
-            callbackContext.error("Consume succeeded but success handler failed");
+            try {
+              JSONObject pluginResponse = new JSONObject();
+              pluginResponse.put("transactionId", purchase.getOrderId());
+              pluginResponse.put("productId", purchase.getSku());
+              pluginResponse.put("token", purchase.getToken());
+              callbackContext.success(pluginResponse);
+            } catch (JSONException e) {
+              callbackContext.error("Consume succeeded but success handler failed");
+            }
           }
         }
-      }
-    });
-    return true;
+      });
+    } catch (IabHelper.IabAsyncInProgressException e) {
+      e.printStackTrace();
+    }
   }
 
-  protected boolean getSkuDetails(final JSONArray args, final CallbackContext callbackContext) {
-    final List<String> moreSkus = new ArrayList<String>();
+  protected void getSkuDetails(final JSONArray args, final CallbackContext callbackContext) {
+    final List<String> moreItemSkus = new ArrayList<String>();
     try {
       for (int i = 0; i < args.length(); i++) {
-        moreSkus.add(args.getString(i));
+        moreItemSkus.add(args.getString(i));
         Log.d(TAG, "get sku:" + args.getString(i));
       }
     } catch (JSONException e) {
       callbackContext.error(makeError("Invalid SKU", INVALID_ARGUMENTS));
-      return false;
+      return;
     }
     if (iabHelper == null || !billingInitialized) {
       callbackContext.error(makeError("Billing is not initialized", BILLING_NOT_INITIALIZED));
-      return false;
+      return;
     }
-    iabHelper.queryInventoryAsync(true, moreSkus, new IabHelper.QueryInventoryFinishedListener() {
-      public void onQueryInventoryFinished(IabResult result, Inventory inventory) {
-        if (result.isFailure()) {
-          callbackContext.error("Error retrieving SKU details");
-          return;
-        }
-        JSONArray response = new JSONArray();
-        try {
-          for (String sku : moreSkus) {
-            SkuDetails skuDetails = inventory.getSkuDetails(sku);
-            if (skuDetails != null) {
-              JSONObject detailsJson = new JSONObject();
-              detailsJson.put("productId", skuDetails.getSku());
-              detailsJson.put("title", skuDetails.getTitle());
-              detailsJson.put("description", skuDetails.getDescription());
-              detailsJson.put("price", skuDetails.getPrice());
-              detailsJson.put("type", skuDetails.getType());
-              response.put(detailsJson);
-            }
-          }
-        } catch (JSONException e) {
-          callbackContext.error(e.getMessage());
-        }
-        callbackContext.success(response);
-      }
-    });
-    return true;
-  }
-
-  protected boolean restorePurchases(final JSONArray args, final CallbackContext callbackContext) {
-    if (iabHelper == null || !billingInitialized) {
-      callbackContext.error(makeError("Billing is not initialized", BILLING_NOT_INITIALIZED));
-    } else {
-      iabHelper.queryInventoryAsync(new IabHelper.QueryInventoryFinishedListener() {
+    try {
+      iabHelper.queryInventoryAsync(true, moreItemSkus, moreItemSkus, new IabHelper.QueryInventoryFinishedListener() {
         public void onQueryInventoryFinished(IabResult result, Inventory inventory) {
           if (result.isFailure()) {
-            callbackContext.error("Error retrieving purchase details");
+            callbackContext.error("Error retrieving SKU details");
             return;
           }
           JSONArray response = new JSONArray();
           try {
-            for (Purchase purchase : inventory.getAllPurchases()) {
-              if (purchase != null) {
+            for (String sku : moreItemSkus) {
+              SkuDetails skuDetails = inventory.getSkuDetails(sku);
+              if (skuDetails != null) {
                 JSONObject detailsJson = new JSONObject();
-                detailsJson.put("orderId", purchase.getOrderId());
-                detailsJson.put("packageName", purchase.getPackageName());
-                detailsJson.put("productId", purchase.getSku());
-                detailsJson.put("purchaseTime", purchase.getPurchaseTime());
-                detailsJson.put("purchaseState", purchase.getPurchaseState());
-                detailsJson.put("purchaseToken", purchase.getToken());
-                detailsJson.put("signature", purchase.getSignature());
-                detailsJson.put("type", purchase.getItemType());
-                detailsJson.put("receipt", purchase.getOriginalJson());
+                detailsJson.put("productId", skuDetails.getSku());
+                detailsJson.put("title", skuDetails.getTitle());
+                detailsJson.put("description", skuDetails.getDescription());
+                detailsJson.put("price", skuDetails.getPrice());
+                detailsJson.put("type", skuDetails.getType());
                 response.put(detailsJson);
               }
             }
@@ -444,22 +419,148 @@ public class InAppBillingV3 extends CordovaPlugin {
           callbackContext.success(response);
         }
       });
+    } catch (IabHelper.IabAsyncInProgressException e) {
+      e.printStackTrace();
     }
-    return true;
+  }
+
+  protected void restorePurchases(final JSONArray args, final CallbackContext callbackContext) {
+    if (iabHelper == null || !billingInitialized) {
+      callbackContext.error(makeError("Billing is not initialized", BILLING_NOT_INITIALIZED));
+    } else {
+      // Important: Dynamically register for broadcast messages about updated purchases.
+      // We register the receiver here instead of as a <receiver> in the Manifest
+      // because we always call getPurchases() at startup, so therefore we can ignore
+      // any broadcasts sent while the app isn't running.
+      // Note: registering this listener in an Activity is a bad idea, but is done here
+      // because this is a SAMPLE. Regardless, the receiver must be registered after
+      // IabHelper is setup, but before first call to getPurchases().
+      // TODO disabled for now
+//      if (mBroadcastReceiver == null) {
+//        mBroadcastReceiver = new IabBroadcastReceiver(InAppBillingV3.this);
+//        IntentFilter broadcastFilter = new IntentFilter(IabBroadcastReceiver.ACTION);
+//        cordova.getActivity().registerReceiver(mBroadcastReceiver, broadcastFilter);
+//      }
+
+      try {
+        iabHelper.queryInventoryAsync(new IabHelper.QueryInventoryFinishedListener() {
+          public void onQueryInventoryFinished(IabResult result, Inventory inventory) {
+            if (result.isFailure()) {
+              callbackContext.error("Error retrieving purchase details");
+              return;
+            }
+            JSONArray response = new JSONArray();
+            try {
+              for (Purchase purchase : inventory.getAllPurchases()) {
+                if (purchase != null) {
+                  JSONObject detailsJson = new JSONObject();
+                  detailsJson.put("orderId", purchase.getOrderId());
+                  detailsJson.put("packageName", purchase.getPackageName());
+                  detailsJson.put("productId", purchase.getSku());
+                  detailsJson.put("purchaseTime", purchase.getPurchaseTime());
+                  detailsJson.put("purchaseState", purchase.getPurchaseState());
+                  detailsJson.put("purchaseToken", purchase.getToken());
+                  detailsJson.put("signature", purchase.getSignature());
+                  detailsJson.put("type", purchase.getItemType());
+                  detailsJson.put("receipt", purchase.getOriginalJson());
+                  response.put(detailsJson);
+                }
+              }
+            } catch (JSONException e) {
+              callbackContext.error(e.getMessage());
+            }
+            callbackContext.success(response);
+          }
+        });
+      } catch (IabHelper.IabAsyncInProgressException e) {
+        e.printStackTrace();
+      }
+    }
+  }
+
+  // Listener that's called when we finish querying the items and subscriptions we own
+  IabHelper.QueryInventoryFinishedListener mQueryInventoryListener = new IabHelper.QueryInventoryFinishedListener() {
+    public void onQueryInventoryFinished(IabResult result, Inventory inventory) {
+      Log.d(TAG, "Query inventory finished.");
+
+      // Have we been disposed of in the meantime? If so, quit.
+      if (iabHelper == null) return;
+
+      // Is it a failure?
+      if (result.isFailure()) {
+        // TODO
+//        complain("Failed to query inventory: " + result);
+        return;
+      }
+
+      JSONArray response = new JSONArray();
+      try {
+        for (Purchase purchase : inventory.getAllPurchases()) {
+          if (purchase != null) {
+            JSONObject detailsJson = new JSONObject();
+            detailsJson.put("orderId", purchase.getOrderId());
+            detailsJson.put("packageName", purchase.getPackageName());
+            detailsJson.put("productId", purchase.getSku());
+            detailsJson.put("purchaseTime", purchase.getPurchaseTime());
+            detailsJson.put("purchaseState", purchase.getPurchaseState());
+            detailsJson.put("purchaseToken", purchase.getToken());
+            detailsJson.put("signature", purchase.getSignature());
+            detailsJson.put("type", purchase.getItemType());
+            detailsJson.put("receipt", purchase.getOriginalJson());
+            response.put(detailsJson);
+          }
+        }
+      } catch (JSONException e) {
+        // TODO
+//        callbackContext.error(e.getMessage());
+      }
+      // TODO
+//      callbackContext.success(response);
+    }
+  };
+
+  @Override
+  public void receivedBroadcast() {
+    // Received a broadcast notification that the inventory of items has changed
+    Log.d(TAG, "Received broadcast notification. Querying inventory.");
+    try {
+      iabHelper.queryInventoryAsync(mQueryInventoryListener);
+    } catch (IabHelper.IabAsyncInProgressException e) {
+      // Do nothing
+    }
   }
 
   @Override
-  public void onActivityResult(int requestCode, int resultCode, Intent intent) {
-    if (!iabHelper.handleActivityResult(requestCode, resultCode, intent)) {
-      super.onActivityResult(requestCode, resultCode, intent);
+  public void onActivityResult(int requestCode, int resultCode, Intent data) {
+//    Log.d(TAG, "onActivityResult(" + requestCode + "," + resultCode + "," + data);
+    if (iabHelper == null) return;
+
+    // Pass on the activity result to the helper for handling
+    if (!iabHelper.handleActivityResult(requestCode, resultCode, data)) {
+      // not handled, so handle it ourselves (here's where you'd
+      // perform any handling of activity results not related to in-app
+      // billing...
+      super.onActivityResult(requestCode, resultCode, data);
     }
+//    else {
+//      Log.d(TAG, "onActivityResult handled by IABUtil.");
+//    }
   }
 
-
+  // We're being destroyed. It's important to dispose of the helper here!
   @Override
   public void onDestroy() {
-    if (iabHelper != null) iabHelper.dispose();
-    iabHelper = null;
-    billingInitialized = false;
+    // very important:
+    if (mBroadcastReceiver != null) {
+      cordova.getActivity().unregisterReceiver(mBroadcastReceiver);
+    }
+
+    // very important:
+//    Log.d(TAG, "Destroying helper.");
+    if (iabHelper != null) {
+      iabHelper.disposeWhenFinished();
+      iabHelper = null;
+    }
+    super.onDestroy();
   }
 }

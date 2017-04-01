@@ -91,6 +91,9 @@ public class IabHelper {
     // Is subscription update supported?
     boolean mSubscriptionUpdateSupported = false;
 
+    // Is subscription update supported?
+    boolean mSubscriptionExtraParamsSupported = false;
+
     // Is an asynchronous operation in progress?
     // (only one at a time can be in progress)
     boolean mAsyncInProgress = false;
@@ -250,15 +253,29 @@ public class IabHelper {
                         logDebug("In-app billing version 3 supported for " + packageName);
                     }
 
-                    // Check for v5 subscriptions support. This is needed for
-                    // getBuyIntentToReplaceSku which allows for subscription update
-                    response = mService.isBillingSupported(5, packageName, ITEM_TYPE_SUBS);
+                    // Check for v6 subscriptions support. This is needed for
+                    // getBuyIntentExtraParams which allows for subscription update and replaceSkusProration flag
+                    response = mService.isBillingSupported(6, packageName, ITEM_TYPE_SUBS);
                     if (response == BILLING_RESPONSE_RESULT_OK) {
                         logDebug("Subscription re-signup AVAILABLE.");
+                        mSubscriptionExtraParamsSupported = true;
+                    } else {
+                        mSubscriptionExtraParamsSupported = false;
+                    }
+
+                    if (mSubscriptionExtraParamsSupported) {
                         mSubscriptionUpdateSupported = true;
                     } else {
-                        logDebug("Subscription re-signup not available.");
-                        mSubscriptionUpdateSupported = false;
+                        // Check for v5 subscriptions support. This is needed for
+                        // getBuyIntentToReplaceSku which allows for subscription update
+                        response = mService.isBillingSupported(5, packageName, ITEM_TYPE_SUBS);
+                        if (response == BILLING_RESPONSE_RESULT_OK) {
+                            logDebug("Subscription re-signup AVAILABLE.");
+                            mSubscriptionUpdateSupported = true;
+                        } else {
+                            logDebug("Subscription re-signup not available.");
+                            mSubscriptionUpdateSupported = false;
+                        }
                     }
 
                     if (mSubscriptionUpdateSupported) {
@@ -395,7 +412,7 @@ public class IabHelper {
     public void launchPurchaseFlow(Activity act, String sku, int requestCode,
             OnIabPurchaseFinishedListener listener, String extraData)
         throws IabAsyncInProgressException {
-        launchPurchaseFlow(act, sku, ITEM_TYPE_INAPP, null, requestCode, listener, extraData);
+        launchPurchaseFlow(act, sku, ITEM_TYPE_INAPP, null, false, requestCode, listener, extraData);
     }
 
     public void launchSubscriptionPurchaseFlow(Activity act, String sku, int requestCode,
@@ -406,14 +423,14 @@ public class IabHelper {
     public void launchSubscriptionPurchaseFlow(Activity act, String sku, int requestCode,
             OnIabPurchaseFinishedListener listener, String extraData)
         throws IabAsyncInProgressException {
-        launchPurchaseFlow(act, sku, ITEM_TYPE_SUBS, null, requestCode, listener, extraData);
+        launchPurchaseFlow(act, sku, ITEM_TYPE_SUBS, null, false,requestCode, listener, extraData);
     }
 
     /**
      * Initiate the UI flow for an in-app purchase. Call this method to initiate an in-app purchase,
      * which will involve bringing up the Google Play screen. The calling activity will be paused
      * while the user interacts with Google Play, and the result will be delivered via the
-     * activity's {@link android.app.Activity#onActivityResult} method, at which point you must call
+     * activity's {@link Activity#onActivityResult} method, at which point you must call
      * this object's {@link #handleActivityResult} method to continue the purchase flow. This method
      * MUST be called from the UI thread of the Activity.
      *
@@ -423,14 +440,14 @@ public class IabHelper {
      *      ITEM_TYPE_SUBS)
      * @param oldSkus A list of SKUs which the new SKU is replacing or null if there are none
      * @param requestCode A request code (to differentiate from other responses -- as in
-     *      {@link android.app.Activity#startActivityForResult}).
+     *      {@link Activity#startActivityForResult}).
      * @param listener The listener to notify when the purchase process finishes
      * @param extraData Extra data (developer payload), which will be returned with the purchase
      *      data when the purchase completes. This extra data will be permanently bound to that
      *      purchase and will always be returned when the purchase is queried.
      */
     public void launchPurchaseFlow(Activity act, String sku, String itemType, List<String> oldSkus,
-            int requestCode, OnIabPurchaseFinishedListener listener, String extraData)
+            boolean disableProration, int requestCode, OnIabPurchaseFinishedListener listener, String extraData)
         throws IabAsyncInProgressException {
         checkNotDisposed();
         checkSetupDone("launchPurchaseFlow");
@@ -453,16 +470,37 @@ public class IabHelper {
                 buyIntentBundle = mService.getBuyIntent(3, mContext.getPackageName(), sku, itemType,
                         extraData);
             } else {
-                // Subscription upgrade/downgrade
-                if (!mSubscriptionUpdateSupported) {
-                    IabResult r = new IabResult(IABHELPER_SUBSCRIPTION_UPDATE_NOT_AVAILABLE,
-                            "Subscription updates are not available.");
-                    flagEndAsync();
-                    if (listener != null) listener.onIabPurchaseFinished(r, null);
-                    return;
+                if (disableProration) {
+                    if (!mSubscriptionExtraParamsSupported) {
+                        IabResult r = new IabResult(IABHELPER_SUBSCRIPTION_UPDATE_NOT_AVAILABLE,
+                                "Disabling Proration not available.");
+                        flagEndAsync();
+                        if (listener != null) listener.onIabPurchaseFinished(r, null);
+                        return;
+                    }
+                    Bundle extraParams = new Bundle();
+                    ArrayList<String> oldSkusArrayList;
+                    if (oldSkus instanceof ArrayList) {
+                        oldSkusArrayList = (ArrayList<String>) oldSkus;
+                    } else {
+                        oldSkusArrayList = new ArrayList<String>(oldSkus);
+                    }
+                    extraParams.putStringArrayList("skusToReplace", oldSkusArrayList);
+                    extraParams.putBoolean("replaceSkusProration", disableProration);
+                    buyIntentBundle = mService.getBuyIntentExtraParams(6, mContext.getPackageName(),
+                            sku, itemType, extraData, extraParams);
+                } else {
+                    // Subscription upgrade/downgrade
+                    if (!mSubscriptionUpdateSupported) {
+                        IabResult r = new IabResult(IABHELPER_SUBSCRIPTION_UPDATE_NOT_AVAILABLE,
+                                "Subscription updates are not available.");
+                        flagEndAsync();
+                        if (listener != null) listener.onIabPurchaseFinished(r, null);
+                        return;
+                    }
+                    buyIntentBundle = mService.getBuyIntentToReplaceSkus(5, mContext.getPackageName(),
+                            oldSkus, sku, itemType, extraData);
                 }
-                buyIntentBundle = mService.getBuyIntentToReplaceSkus(5, mContext.getPackageName(),
-                        oldSkus, sku, itemType, extraData);
             }
             int response = getResponseCodeFromBundle(buyIntentBundle);
             if (response != BILLING_RESPONSE_RESULT_OK) {
@@ -504,7 +542,7 @@ public class IabHelper {
     /**
      * Handles an activity result that's part of the purchase flow in in-app billing. If you
      * are calling {@link #launchPurchaseFlow}, then you must call this method from your
-     * Activity's {@link android.app.Activity@onActivityResult} method. This method
+     * Activity's {@link Activity@onActivityResult} method. This method
      * MUST be called from the UI thread of the Activity.
      *
      * @param requestCode The requestCode as you received it.
