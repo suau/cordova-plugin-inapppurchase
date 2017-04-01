@@ -53,6 +53,7 @@
     <source-file src="src/android/InAppBillingV3.java" target-dir="src/com/alexdisler/inapppurchases" />
     <source-file src="src/android/Base64.java" target-dir="src/com/alexdisler/inapppurchases" />
     <source-file src="src/android/Base64DecoderException.java" target-dir="src/com/alexdisler/inapppurchases" />
+    <source-file src="src/android/IabBroadcastReceiver.java" target-dir="src/com/alexdisler/inapppurchases" />
     <source-file src="src/android/IabException.java" target-dir="src/com/alexdisler/inapppurchases" />
     <source-file src="src/android/IabHelper.java" target-dir="src/com/alexdisler/inapppurchases" />
     <source-file src="src/android/IabResult.java" target-dir="src/com/alexdisler/inapppurchases" />
