@@ -117,6 +117,7 @@ inAppPurchase.restorePurchases = () => {
             productType : val.type,
             signature: val.signature,
             receipt : val.receipt,
+            isAutoRenewing: val.isAutoRenewing
           };
         });
       }

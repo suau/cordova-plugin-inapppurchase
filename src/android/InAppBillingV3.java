@@ -463,6 +463,7 @@ public class InAppBillingV3 extends CordovaPlugin implements IabBroadcastReceive
                   detailsJson.put("signature", purchase.getSignature());
                   detailsJson.put("type", purchase.getItemType());
                   detailsJson.put("receipt", purchase.getOriginalJson());
+                  detailsJson.put("isAutoRenewing", purchase.isAutoRenewing());
                   response.put(detailsJson);
                 }
               }
