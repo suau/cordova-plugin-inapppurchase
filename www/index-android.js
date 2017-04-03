@@ -204,7 +204,8 @@ inAppPurchase.restorePurchases = function () {
           type: val.type,
           productType: val.type,
           signature: val.signature,
-          receipt: val.receipt
+          receipt: val.receipt,
+          isAutoRenewing: val.isAutoRenewing
         };
       });
     }
