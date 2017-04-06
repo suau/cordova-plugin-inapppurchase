@@ -67,7 +67,8 @@ const executePaymentOfType = (type, productId, extraParams) => {
         resolve({
           signature: res.signature,
           productId: res.productId,
-          transactionId: res.purchaseToken,
+          transactionId: res.orderId,
+          purchaseToken: res.purchaseToken,
           type : res.type,
           productType : res.type,
           receipt : res.receipt,
@@ -112,6 +113,7 @@ inAppPurchase.restorePurchases = () => {
             productId: val.productId,
             state : val.state,
             transactionId: val.orderId,
+            purchaseToken: val.purchaseToken,
             date : val.date,
             type : val.type,
             productType : val.type,
